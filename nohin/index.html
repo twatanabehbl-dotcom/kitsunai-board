@@ -51,7 +51,10 @@ function show(id){ ['pin','home','form','done'].forEach(x=>$(x).classList.toggle
 function yen(n){ return (Number(n)||0).toLocaleString('ja-JP'); }
 function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 async function get(params){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); const r=await fetch(u+'?'+new URLSearchParams(params)); return r.json(); }
-async function post(body){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)}); return r.json(); }
+// Apps Script は応答の転送先がたまに404を返す（一時的）。3回まで自動で再送する。saveは二重登録にならない（サーバ側で同一伝票を検知）
+async function post(body){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); let last;
+  for(let i=0;i<3;i++){ try{ const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); if(i>0) j.retried=true; return j; }catch(e){ last=e; await new Promise(res=>setTimeout(res,1500*(i+1))); } }
+  throw last; }
 async function login(){ const pin=$('pinInput').value.trim(); $('pinMsg').innerHTML='<div class="msg info"><span class="spin"></span>確認中…</div>';
   try{ if($('apiUrl').value.trim()) SS('nohin_api',$('apiUrl').value.trim()); const j=await get({action:'config',pin}); if(!j.ok) throw new Error(j.error||'NG');
     CFG=Object.assign({pin},j); SS('nohin_cfg',JSON.stringify(CFG)); boot(); }catch(e){ $('pinMsg').innerHTML='<div class="msg ng">'+esc(e.message)+'</div>'; } }
@@ -80,7 +83,7 @@ function payload(){ return {pin:CFG.pin,action:'save',image:IMG,mime:'image/jpeg
 async function send(force){ const p=payload(); if(!p.data.vendor||!p.data.date||!p.data.total){ alert('業者・納品日・合計を入れてください'); return; } if(force) p.force=true;
   $('send').disabled=true; $('send').innerHTML='<span class="spin"></span>送信中…';
   try{ const j=await post(p); if(!j.ok) throw new Error(j.error||'NG');
-    if(j.dup){ $('send').disabled=false; $('send').textContent='この内容で送信'; if(confirm('同じ伝票（業者・納品日・合計が同じ）が登録済みです。それでも登録しますか？')) return send(true); return; }
+    if(j.dup && !j.retried){ $('send').disabled=false; $('send').textContent='この内容で送信'; if(confirm('同じ伝票（業者・納品日・合計が同じ）が登録済みです。それでも登録しますか？')) return send(true); return; }   // 再送で「登録済み」＝1回目が実は届いていたので成功扱い
     hist(p.data,j); $('doneMsg').innerHTML='登録しました。<br><b>'+esc(p.data.vendor)+'　'+esc(p.data.date.slice(5).replace('-','/'))+'　¥'+yen(p.data.total)+'</b>'+(j.talknote==='sent'?'<br>Talknoteにも投稿しました':(j.talknote&&j.talknote.startsWith('NG')?'<br><span style="color:#C62828">Talknote投稿は失敗（'+esc(j.talknote)+'）</span>':'')); show('done');
   }catch(e){ const q=JSON.parse(LS('nohin_q')||'[]'); q.push(p); SS('nohin_q',JSON.stringify(q)); renderQueue(); $('doneMsg').innerHTML='電波が無いか送信に失敗しました（'+esc(e.message)+'）。<br>端末に保存したので、後でホームの「再送する」を押してください。'; $('doneMsg').className='msg ng'; show('done'); }
   $('send').disabled=false; $('send').textContent='この内容で送信'; }
