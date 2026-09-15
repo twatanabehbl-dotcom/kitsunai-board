@@ -28,7 +28,7 @@ details summary{cursor:pointer;color:var(--a);font-weight:600;font-size:14px;mar
 <div style="height:10px"></div>
 <div id="queue" class="hide"><div class="msg ng">送れなかった伝票が <b id="qn"></b> 件あります。電波の良い所で「再送」を押してください。<div style="height:8px"></div><button class="btn ghost" onclick="retryQueue()">再送する</button></div></div>
 <div class="card"><h3 style="margin:0 0 6px">今日の登録<span class="badge" id="todayN">0</span></h3><table class="hist" id="hist"></table><p class="muted">この端末で登録した分だけ表示。全体は仕入マスタ（スプレッドシート）で確認。</p></div>
-<p class="muted" style="text-align:center"><a href="#" onclick="logout();return false" style="color:#8a94a0">別の店に切り替える</a></p>
+<p class="muted" style="text-align:center"><a href="#" onclick="askName(true);return false" style="color:#8a94a0">名前を変える</a>　｜　<a href="#" onclick="logout();return false" style="color:#8a94a0">別の店に切り替える</a></p>
 </div>
 
 <div id="form" class="hide">
@@ -58,35 +58,48 @@ async function get(params){ const u=api(); if(!u) throw new Error('APIのURLが�
   for(let i=0;i<3;i++){ try{ const r=await fetch(u+'?'+new URLSearchParams(params)); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }catch(e){ last=e; await new Promise(res=>setTimeout(res,1500*(i+1))); } }
   throw new Error('つながりませんでした（'+(last&&last.message)+'）。少し待ってもう一度'); }
 // Apps Script は応答の転送先がたまに404を返す（一時的）。3回まで自動で再送する。saveは二重登録にならない（サーバ側で同一伝票を検知）
-async function post(body){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); let last;
-  for(let i=0;i<3;i++){ try{ const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); if(i>0) j.retried=true; return j; }catch(e){ last=e; await new Promise(res=>setTimeout(res,1500*(i+1))); } }
+// 1回の通信は timeout ms で打ち切る（止まりっぱなし防止）
+async function post(body,opt){ opt=Object.assign({tries:3,timeout:45000},opt||{}); const u=api(); if(!u) throw new Error('APIのURLが未設定です'); let last;
+  for(let i=0;i<opt.tries;i++){ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),opt.timeout);
+    try{ const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),signal:ac.signal}); if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(); if(i>0) j.retried=true; return j; }
+    catch(e){ last=(e&&e.name==='AbortError')?new Error('応答待ちが'+Math.round(opt.timeout/1000)+'秒を超えました'):e; if(i<opt.tries-1) await new Promise(res=>setTimeout(res,1500*(i+1))); }
+    finally{ clearTimeout(tm); } }
   throw last; }
 async function login(){ const pin=$('pinInput').value.trim(); $('pinMsg').innerHTML='<div class="msg info"><span class="spin"></span>確認中…</div>';
   try{ const t=validApi($('apiUrl').value); if(t) SS('nohin_api',t); else $('apiUrl').value=''; const j=await get({action:'config',pin}); if(!j.ok) throw new Error(j.error||'NG');
     CFG=Object.assign({pin},j); SS('nohin_cfg',JSON.stringify(CFG)); boot(); }catch(e){ $('pinMsg').innerHTML='<div class="msg ng">'+esc(e.message)+'</div>'; } }
 function logout(){ try{localStorage.removeItem('nohin_cfg')}catch(e){} CFG=null; show('pin'); }
-function boot(){ $('storeName').textContent=CFG.disp||CFG.store; $('storeName').classList.remove('hide'); $('hdr').textContent=CFG.talknote?'Talknoteにも自動投稿':'Talknote投稿は未設定';
+// 登録者名（端末ごとに1回。Talknote投稿とマスタに「登録: ○○」として残す）
+function userName(){ return (LS('nohin_user')||'').trim(); }
+function askName(force){ let n=userName(); if(n&&!force) return n; const v=prompt('あなたの名前（Talknoteの投稿に「登録: 名前」として載ります）', n||''); if(v!==null&&v.trim()){ n=v.trim(); SS('nohin_user',n); } $('hdr').textContent=(CFG&&CFG.talknote?'Talknoteにも自動投稿':'Talknote投稿は未設定')+(userName()?'　登録者: '+userName():'　登録者: 未設定'); return n; }
+function boot(){ $('storeName').textContent=CFG.disp||CFG.store; $('storeName').classList.remove('hide'); $('hdr').textContent=CFG.talknote?'Talknoteにも自動投稿':'Talknote投稿は未設定'; setTimeout(()=>askName(false),300);
   $('vendor').innerHTML=CFG.vendors.map(v=>`<option value="${esc(v.name)}" data-tax="${v.tax}">${esc(v.name)}</option>`).join(''); renderHist(); renderQueue(); show('home'); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // ---- 撮影 → 縮小 → OCR
-function picked(inp){ const f=inp.files[0]; inp.value=''; if(!f) return; const img=new Image(); img.onload=()=>{ const M=1600, r=Math.min(1,M/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-    const data=c.toDataURL('image/jpeg',0.85); IMG=data.split(',')[1]; $('prev').src=data; URL.revokeObjectURL(img.src); startForm(); runOcr(); }; img.src=URL.createObjectURL(f); }
-function startForm(){ OCR=null; $('ocrMsg').className='msg info'; $('ocrMsg').innerHTML='<span class="spin"></span>読み取り中…（5〜10秒）'; $('date').value=today(); $('total').value=''; $('slip').value=''; $('note').value=''; setItems([]); $('send').disabled=true; show('form'); }
-async function runOcr(){ try{ const j=await post({pin:CFG.pin,action:'ocr',image:IMG,mime:'image/jpeg'}); if(!j.ok) throw new Error(j.error||'NG'); OCR=j.result||{};
+function picked(inp){ const f=inp.files[0]; inp.value=''; if(!f) return; const img=new Image(); img.onload=()=>{ const M=1280, r=Math.min(1,M/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const data=c.toDataURL('image/jpeg',0.8); IMG=data.split(',')[1]; $('prev').src=data; URL.revokeObjectURL(img.src); startForm(); runOcr(); }; img.src=URL.createObjectURL(f); }
+let OCR_SEQ=0, OCR_TIMER=null;
+function stopOcrWait(){ if(OCR_TIMER){ clearInterval(OCR_TIMER); OCR_TIMER=null; } }
+function skipOcr(){ OCR_SEQ++; stopOcrWait(); $('ocrMsg').className='msg info'; $('ocrMsg').textContent='読み取りをやめました。手で入力して送信してください。'; }
+// 読み取り中でも手入力・送信はできる（待たせない）。経過秒数を出し、長ければ手入力に切り替えられる
+function startForm(){ OCR=null; OCR_SEQ++; stopOcrWait(); const t0=Date.now(); $('ocrMsg').className='msg info';
+  const paint=()=>{ const s=Math.round((Date.now()-t0)/1000); $('ocrMsg').innerHTML='<span class="spin"></span>読み取り中… '+s+'秒（通常10〜20秒）。待たずに手入力して送信してもOK　<a href="#" onclick="skipOcr();return false" style="color:#2F6FB0;font-weight:600">読み取りをやめる</a>'; };
+  paint(); OCR_TIMER=setInterval(paint,1000);
+  $('date').value=today(); $('total').value=''; $('slip').value=''; $('note').value=''; setItems([]); $('send').disabled=false; show('form'); }
+async function runOcr(){ const seq=OCR_SEQ; try{ const j=await post({pin:CFG.pin,action:'ocr',image:IMG,mime:'image/jpeg'},{tries:2,timeout:40000}); if(seq!==OCR_SEQ) return; if(!j.ok) throw new Error(j.error||'NG'); OCR=j.result||{}; stopOcrWait();
     if(OCR.is_slip===false){ $('ocrMsg').className='msg ng'; $('ocrMsg').textContent='納品書ではなさそうです（案内文・受領書など）。それでも登録するなら内容を入れて送信。'; }
     else { $('ocrMsg').className='msg ok'; $('ocrMsg').textContent='読み取りました。伝票と見比べて、違っていたら直してから送信。'+(OCR.note?'（'+OCR.note+'）':''); }
     if(OCR.vendor && [...$('vendor').options].some(o=>o.value===OCR.vendor)) $('vendor').value=OCR.vendor; onVendor();
-    if(OCR.date && /^\d{4}-\d{2}-\d{2}$/.test(OCR.date)) $('date').value=OCR.date; if(OCR.total) $('total').value=Math.round(OCR.total); if(OCR.tax_rate==10||OCR.tax_rate==8) $('tax').value=String(OCR.tax_rate); if(OCR.slip_no) $('slip').value=OCR.slip_no; setItems(OCR.items||[]);
-  }catch(e){ $('ocrMsg').className='msg ng'; $('ocrMsg').textContent='自動読み取りできませんでした（'+e.message+'）。手で入力して送信できます。'; }
-  $('send').disabled=false; }
+    if(OCR.date && /^\d{4}-\d{2}-\d{2}$/.test(OCR.date)) $('date').value=OCR.date; if(OCR.total && !$('total').value) $('total').value=Math.round(OCR.total); if(OCR.tax_rate==10||OCR.tax_rate==8) $('tax').value=String(OCR.tax_rate); if(OCR.slip_no) $('slip').value=OCR.slip_no; setItems(OCR.items||[]);
+  }catch(e){ if(seq!==OCR_SEQ) return; stopOcrWait(); $('ocrMsg').className='msg ng'; $('ocrMsg').textContent='自動読み取りできませんでした（'+e.message+'）。手で入力して送信できます。'; } }
 function onVendor(){ const o=$('vendor').selectedOptions[0]; if(o&&o.dataset.tax&&!OCR?.tax_rate) $('tax').value=o.dataset.tax; }
 $('vendor').addEventListener('change',()=>{ OCR&&(OCR.tax_rate=null); onVendor(); });
 function setItems(items){ const t=$('items'); [...t.querySelectorAll('tr')].slice(1).forEach(r=>r.remove()); items.forEach(addItem); $('itemsN').textContent=items.length; if(items.length) $('itemsBox').open=false; }
 function addItem(it){ it=it&&it.name!==undefined?it:{}; const tr=document.createElement('tr'); tr.innerHTML=`<td><input value="${esc(it.name||'')}" placeholder="品名"></td><td class="n"><input value="${esc(it.qty??'')}" inputmode="decimal"></td><td class="n"><input value="${esc(it.amount??'')}" inputmode="numeric"></td>`; $('items').appendChild(tr); $('itemsN').textContent=$('items').querySelectorAll('tr').length-1; }
 function getItems(){ return [...$('items').querySelectorAll('tr')].slice(1).map(r=>{const i=r.querySelectorAll('input'); return {name:i[0].value.trim(),qty:i[1].value.trim(),amount:i[2].value.trim()};}).filter(x=>x.name||x.amount); }
-function payload(){ return {pin:CFG.pin,action:'save',image:IMG,mime:'image/jpeg',data:{vendor:$('vendor').value,date:$('date').value,total:Number($('total').value),tax_rate:Number($('tax').value),slip_no:$('slip').value.trim(),note:$('note').value.trim(),items:getItems(),
+function payload(){ return {pin:CFG.pin,action:'save',image:IMG,mime:'image/jpeg',data:{vendor:$('vendor').value,date:$('date').value,total:Number($('total').value),tax_rate:Number($('tax').value),slip_no:$('slip').value.trim(),note:$('note').value.trim(),items:getItems(),user:userName(),
   ocr_match: !!(OCR && OCR.vendor===$('vendor').value && String(Math.round(OCR.total||0))===String(Math.round(Number($('total').value))) && OCR.date===$('date').value)}}; }
-async function send(force){ const p=payload(); if(!p.data.vendor||!p.data.date||!p.data.total){ alert('業者・納品日・合計を入れてください'); return; } if(force) p.force=true;
+async function send(force){ if(!userName()){ askName(true); if(!userName()){ alert('名前を入れてください（誰が登録したか分かるようにするため）'); return; } } const p=payload(); if(!p.data.vendor||!p.data.date||!p.data.total){ alert('業者・納品日・合計を入れてください'); return; } if(force) p.force=true; OCR_SEQ++; stopOcrWait();
   $('send').disabled=true; $('send').innerHTML='<span class="spin"></span>送信中…';
   try{ const j=await post(p); if(!j.ok) throw new Error(j.error||'NG');
     if(j.dup && !j.retried){ $('send').disabled=false; $('send').textContent='この内容で送信'; if(confirm('同じ伝票（業者・納品日・合計が同じ）が登録済みです。それでも登録しますか？')) return send(true); return; }   // 再送で「登録済み」＝1回目が実は届いていたので成功扱い
