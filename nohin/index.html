@@ -1,0 +1,96 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="納品書"><meta name="theme-color" content="#2F4F6F">
+<title>KITSUNAI 納品書アプリ</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon.svg"><script src="config.js"></script>
+<style>
+:root{--b:#2F4F6F;--a:#2F6FB0;--ok:#1E8E3E;--ng:#C62828}*{box-sizing:border-box}body{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;margin:0;background:#F2F4F7;color:#1f2933;padding-bottom:40px}
+header{background:var(--b);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}header h1{margin:0;font-size:17px}header small{opacity:.85;font-size:12px}
+.wrap{padding:14px;max-width:640px;margin:0 auto}.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.big{display:block;width:100%;border:0;border-radius:14px;background:var(--a);color:#fff;font-size:20px;font-weight:700;padding:22px;text-align:center;cursor:pointer}.big.sub{background:#fff;color:var(--a);border:2px solid var(--a);font-size:16px;padding:14px}
+button.btn{border:0;border-radius:10px;background:var(--a);color:#fff;font-size:16px;font-weight:700;padding:14px;width:100%;cursor:pointer}button.btn.ghost{background:#eef1f4;color:#334}button.btn.ok{background:var(--ok)}button:disabled{opacity:.5}
+label{display:block;font-size:12px;color:#6b7683;font-weight:600;margin:10px 0 4px}input,select,textarea{width:100%;font-size:18px;padding:10px;border:1px solid #ccd3da;border-radius:10px;background:#fff}input.num{text-align:right;font-variant-numeric:tabular-nums;font-size:24px;font-weight:700}
+.row{display:flex;gap:8px}.row>*{flex:1}img.prev{width:100%;border-radius:10px;background:#000;max-height:46vh;object-fit:contain}
+.msg{padding:10px 12px;border-radius:10px;font-size:14px;margin:8px 0}.msg.info{background:#FFF8E6;border-left:4px solid #E0A030}.msg.ok{background:#E8F5E9;border-left:4px solid var(--ok)}.msg.ng{background:#FDECEA;border-left:4px solid var(--ng)}
+table{border-collapse:collapse;width:100%;font-size:13px}th{text-align:left;color:#6b7683;font-weight:600;border-bottom:2px solid #e3e7eb;padding:6px 4px}td{border-bottom:1px solid #eef1f4;padding:4px 2px}td input{font-size:14px;padding:6px;border-radius:6px}td.n input{text-align:right}
+details summary{cursor:pointer;color:var(--a);font-weight:600;font-size:14px;margin:10px 0}.muted{color:#8a94a0;font-size:12px}.hist td{padding:8px 4px}.spin{display:inline-block;width:18px;height:18px;border:3px solid #ccd;border-top-color:var(--a);border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:8px}@keyframes s{to{transform:rotate(360deg)}}
+#pin input{font-size:26px;text-align:center;letter-spacing:.3em}.hide{display:none!important}.badge{display:inline-block;background:#eef1f4;border-radius:999px;padding:2px 10px;font-size:12px;color:#334;margin-left:6px}
+</style></head><body>
+<header><h1>納品書アプリ <span id="storeName" class="badge hide"></span></h1><small id="hdr"></small></header>
+<div class="wrap">
+
+<div id="pin" class="card"><h3 style="margin:0 0 6px">店のPINを入力</h3><p class="muted">店ごとに配られた4桁の番号です</p><input id="pinInput" type="password" inputmode="numeric" placeholder="PIN"><div style="height:10px"></div><button class="btn" onclick="login()">開く</button><div id="pinMsg"></div>
+<details><summary>接続先の設定</summary><label>APIのURL（Apps Script の exec URL）</label><input id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec"><p class="muted">通常は変更不要。空なら config.js の値を使います。</p></details></div>
+
+<div id="home" class="hide">
+<input id="file" type="file" accept="image/*" capture="environment" class="hide" onchange="picked(this)">
+<button class="big" onclick="document.getElementById('file').click()">📷 納品書を撮る</button>
+<div style="height:10px"></div>
+<div id="queue" class="hide"><div class="msg ng">送れなかった伝票が <b id="qn"></b> 件あります。電波の良い所で「再送」を押してください。<div style="height:8px"></div><button class="btn ghost" onclick="retryQueue()">再送する</button></div></div>
+<div class="card"><h3 style="margin:0 0 6px">今日の登録<span class="badge" id="todayN">0</span></h3><table class="hist" id="hist"></table><p class="muted">この端末で登録した分だけ表示。全体は仕入マスタ（スプレッドシート）で確認。</p></div>
+<p class="muted" style="text-align:center"><a href="#" onclick="logout();return false" style="color:#8a94a0">別の店に切り替える</a></p>
+</div>
+
+<div id="form" class="hide">
+<div class="card"><img id="prev" class="prev"><div id="ocrMsg" class="msg info"><span class="spin"></span>読み取り中…（5〜10秒）</div>
+<div class="row"><div><label>業者</label><select id="vendor"></select></div><div><label>納品日</label><input id="date" type="date"></div></div>
+<label>合計（税込・円）</label><input id="total" class="num" type="number" inputmode="numeric" placeholder="0">
+<div class="row"><div><label>税率</label><select id="tax"><option value="8">8%（食材）</option><option value="10">10%（酒・消耗品）</option></select></div><div><label>伝票番号（任意）</label><input id="slip" placeholder=""></div></div>
+<details id="itemsBox"><summary>明細 <span id="itemsN" class="badge">0</span></summary><table id="items"><tr><th>品名</th><th style="width:16%">数量</th><th style="width:22%">金額</th></tr></table><button class="btn ghost" style="margin-top:6px;padding:8px" onclick="addItem()">＋ 行を足す</button></details>
+<label>備考（任意）</label><input id="note" placeholder="返品・値引きなど">
+<div style="height:14px"></div><button id="send" class="btn ok" onclick="send()" disabled>この内容で送信</button><div style="height:8px"></div><button class="btn ghost" onclick="cancel()">やり直す</button></div>
+</div>
+
+<div id="done" class="hide"><div class="card"><div class="msg ok" id="doneMsg"></div><button class="big" onclick="document.getElementById('file').click()">📷 次の納品書を撮る</button><div style="height:8px"></div><button class="btn ghost" onclick="show('home')">ホームへ</button></div></div>
+
+</div>
+<script>
+const $=id=>document.getElementById(id); const LS=k=>{try{return localStorage.getItem(k)}catch(e){return null}}; const SS=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+let CFG=null, IMG=null, OCR=null;
+function api(){ return ($('apiUrl').value||'').trim() || LS('nohin_api') || (window.NOHIN_CONFIG&&NOHIN_CONFIG.api) || ''; }
+function show(id){ ['pin','home','form','done'].forEach(x=>$(x).classList.toggle('hide',x!==id)); window.scrollTo(0,0); }
+function yen(n){ return (Number(n)||0).toLocaleString('ja-JP'); }
+function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+async function get(params){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); const r=await fetch(u+'?'+new URLSearchParams(params)); return r.json(); }
+async function post(body){ const u=api(); if(!u) throw new Error('APIのURLが未設定です'); const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)}); return r.json(); }
+async function login(){ const pin=$('pinInput').value.trim(); $('pinMsg').innerHTML='<div class="msg info"><span class="spin"></span>確認中…</div>';
+  try{ if($('apiUrl').value.trim()) SS('nohin_api',$('apiUrl').value.trim()); const j=await get({action:'config',pin}); if(!j.ok) throw new Error(j.error||'NG');
+    CFG=Object.assign({pin},j); SS('nohin_cfg',JSON.stringify(CFG)); boot(); }catch(e){ $('pinMsg').innerHTML='<div class="msg ng">'+esc(e.message)+'</div>'; } }
+function logout(){ try{localStorage.removeItem('nohin_cfg')}catch(e){} CFG=null; show('pin'); }
+function boot(){ $('storeName').textContent=CFG.disp||CFG.store; $('storeName').classList.remove('hide'); $('hdr').textContent=CFG.talknote?'Talknoteにも自動投稿':'Talknote投稿は未設定';
+  $('vendor').innerHTML=CFG.vendors.map(v=>`<option value="${esc(v.name)}" data-tax="${v.tax}">${esc(v.name)}</option>`).join(''); renderHist(); renderQueue(); show('home'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// ---- 撮影 → 縮小 → OCR
+function picked(inp){ const f=inp.files[0]; inp.value=''; if(!f) return; const img=new Image(); img.onload=()=>{ const M=1600, r=Math.min(1,M/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const data=c.toDataURL('image/jpeg',0.85); IMG=data.split(',')[1]; $('prev').src=data; URL.revokeObjectURL(img.src); startForm(); runOcr(); }; img.src=URL.createObjectURL(f); }
+function startForm(){ OCR=null; $('ocrMsg').className='msg info'; $('ocrMsg').innerHTML='<span class="spin"></span>読み取り中…（5〜10秒）'; $('date').value=today(); $('total').value=''; $('slip').value=''; $('note').value=''; setItems([]); $('send').disabled=true; show('form'); }
+async function runOcr(){ try{ const j=await post({pin:CFG.pin,action:'ocr',image:IMG,mime:'image/jpeg'}); if(!j.ok) throw new Error(j.error||'NG'); OCR=j.result||{};
+    if(OCR.is_slip===false){ $('ocrMsg').className='msg ng'; $('ocrMsg').textContent='納品書ではなさそうです（案内文・受領書など）。それでも登録するなら内容を入れて送信。'; }
+    else { $('ocrMsg').className='msg ok'; $('ocrMsg').textContent='読み取りました。伝票と見比べて、違っていたら直してから送信。'+(OCR.note?'（'+OCR.note+'）':''); }
+    if(OCR.vendor && [...$('vendor').options].some(o=>o.value===OCR.vendor)) $('vendor').value=OCR.vendor; onVendor();
+    if(OCR.date && /^\d{4}-\d{2}-\d{2}$/.test(OCR.date)) $('date').value=OCR.date; if(OCR.total) $('total').value=Math.round(OCR.total); if(OCR.tax_rate==10||OCR.tax_rate==8) $('tax').value=String(OCR.tax_rate); if(OCR.slip_no) $('slip').value=OCR.slip_no; setItems(OCR.items||[]);
+  }catch(e){ $('ocrMsg').className='msg ng'; $('ocrMsg').textContent='自動読み取りできませんでした（'+e.message+'）。手で入力して送信できます。'; }
+  $('send').disabled=false; }
+function onVendor(){ const o=$('vendor').selectedOptions[0]; if(o&&o.dataset.tax&&!OCR?.tax_rate) $('tax').value=o.dataset.tax; }
+$('vendor').addEventListener('change',()=>{ OCR&&(OCR.tax_rate=null); onVendor(); });
+function setItems(items){ const t=$('items'); [...t.querySelectorAll('tr')].slice(1).forEach(r=>r.remove()); items.forEach(addItem); $('itemsN').textContent=items.length; if(items.length) $('itemsBox').open=false; }
+function addItem(it){ it=it&&it.name!==undefined?it:{}; const tr=document.createElement('tr'); tr.innerHTML=`<td><input value="${esc(it.name||'')}" placeholder="品名"></td><td class="n"><input value="${esc(it.qty??'')}" inputmode="decimal"></td><td class="n"><input value="${esc(it.amount??'')}" inputmode="numeric"></td>`; $('items').appendChild(tr); $('itemsN').textContent=$('items').querySelectorAll('tr').length-1; }
+function getItems(){ return [...$('items').querySelectorAll('tr')].slice(1).map(r=>{const i=r.querySelectorAll('input'); return {name:i[0].value.trim(),qty:i[1].value.trim(),amount:i[2].value.trim()};}).filter(x=>x.name||x.amount); }
+function payload(){ return {pin:CFG.pin,action:'save',image:IMG,mime:'image/jpeg',data:{vendor:$('vendor').value,date:$('date').value,total:Number($('total').value),tax_rate:Number($('tax').value),slip_no:$('slip').value.trim(),note:$('note').value.trim(),items:getItems(),
+  ocr_match: !!(OCR && OCR.vendor===$('vendor').value && String(Math.round(OCR.total||0))===String(Math.round(Number($('total').value))) && OCR.date===$('date').value)}}; }
+async function send(force){ const p=payload(); if(!p.data.vendor||!p.data.date||!p.data.total){ alert('業者・納品日・合計を入れてください'); return; } if(force) p.force=true;
+  $('send').disabled=true; $('send').innerHTML='<span class="spin"></span>送信中…';
+  try{ const j=await post(p); if(!j.ok) throw new Error(j.error||'NG');
+    if(j.dup){ $('send').disabled=false; $('send').textContent='この内容で送信'; if(confirm('同じ伝票（業者・納品日・合計が同じ）が登録済みです。それでも登録しますか？')) return send(true); return; }
+    hist(p.data,j); $('doneMsg').innerHTML='登録しました。<br><b>'+esc(p.data.vendor)+'　'+esc(p.data.date.slice(5).replace('-','/'))+'　¥'+yen(p.data.total)+'</b>'+(j.talknote==='sent'?'<br>Talknoteにも投稿しました':(j.talknote&&j.talknote.startsWith('NG')?'<br><span style="color:#C62828">Talknote投稿は失敗（'+esc(j.talknote)+'）</span>':'')); show('done');
+  }catch(e){ const q=JSON.parse(LS('nohin_q')||'[]'); q.push(p); SS('nohin_q',JSON.stringify(q)); renderQueue(); $('doneMsg').innerHTML='電波が無いか送信に失敗しました（'+esc(e.message)+'）。<br>端末に保存したので、後でホームの「再送する」を押してください。'; $('doneMsg').className='msg ng'; show('done'); }
+  $('send').disabled=false; $('send').textContent='この内容で送信'; }
+function cancel(){ IMG=null; show('home'); }
+function hist(d,j){ const h=JSON.parse(LS('nohin_hist')||'[]'); h.unshift({t:Date.now(),vendor:d.vendor,date:d.date,total:d.total,id:j.id}); SS('nohin_hist',JSON.stringify(h.slice(0,200))); renderHist(); }
+function renderHist(){ const h=JSON.parse(LS('nohin_hist')||'[]'); const t=today(); const td=h.filter(x=>new Date(x.t).toDateString()===new Date().toDateString()); $('todayN').textContent=td.length;
+  $('hist').innerHTML=td.map(x=>`<tr><td>${esc(x.date.slice(5).replace('-','/'))}</td><td>${esc(x.vendor)}</td><td style="text-align:right">¥${yen(x.total)}</td></tr>`).join('')||'<tr><td class="muted">まだありません</td></tr>'; }
+function renderQueue(){ const q=JSON.parse(LS('nohin_q')||'[]'); $('queue').classList.toggle('hide',!q.length); $('qn').textContent=q.length; }
+async function retryQueue(){ let q=JSON.parse(LS('nohin_q')||'[]'); const rest=[]; for(const p of q){ try{ const j=await post(p); if(!j.ok) throw 0; if(!j.dup) hist(p.data,j);}catch(e){ rest.push(p);} } SS('nohin_q',JSON.stringify(rest)); renderQueue(); alert(rest.length?rest.length+'件がまだ送れていません':'すべて送信しました'); }
+// ---- 起動
+(function(){ const c=LS('nohin_cfg'); if(c){ try{ CFG=JSON.parse(c); boot(); return; }catch(e){} } show('pin'); })();
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+</script></body></html>
