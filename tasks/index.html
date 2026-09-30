@@ -1,0 +1,68 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>タスク入力 | KITSUNAI</title>
+<style>
+:root{--b:#2F4F6F;--a:#2F6FB0}*{box-sizing:border-box}body{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;margin:0;background:#F2F4F7;color:#1f2933}
+header{background:var(--b);color:#fff;padding:14px 16px}header h1{margin:0;font-size:18px}header a{color:#cfe0f3;font-size:12px}
+.wrap{max-width:900px;margin:0 auto;padding:12px 16px 60px}.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+h2{font-size:15px;margin:0 0 10px;color:var(--b)}label{font-size:12px;color:#6b7683;display:block;margin:8px 0 3px}
+input,select,textarea{font:inherit;font-size:15px;padding:8px;border:1px solid #d0d7de;border-radius:8px;width:100%;background:#fff}textarea{min-height:120px}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}@media(max-width:600px){.row{grid-template-columns:1fr 1fr}}
+button{font:inherit;font-size:14px;padding:9px 16px;border:0;border-radius:8px;background:var(--a);color:#fff;cursor:pointer}button.sub{background:#fff;color:#334;border:1px solid #d0d7de}button.warn{background:#fff;color:#C62828;border:1px solid #e3b4b4}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.chips button{padding:4px 10px;font-size:12px;background:#F6F8FA;color:#334;border:1px solid #d8dee5}
+.tabs{display:flex;gap:6px;margin-bottom:10px}.tabs button{background:#fff;color:#334;border:1px solid #d8dee5;border-radius:999px;padding:6px 14px}.tabs button.on{background:var(--a);color:#fff;border-color:var(--a)}
+.grp{font-weight:700;color:var(--b);margin:14px 0 4px;font-size:14px}ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:8px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid #eef1f4}li input[type=checkbox]{width:20px;height:20px;flex:0 0 20px;margin-top:2px}
+li .tx{flex:1;font-size:14px;line-height:1.45}li .mt{display:block;font-size:12px;color:#6b7683}li.done .tx{text-decoration:line-through;color:#9aa4ae}li.over .due{color:#C62828;font-weight:700}
+li .ops{display:flex;gap:4px}li .ops button{padding:3px 8px;font-size:12px}li.edit{flex-wrap:wrap}li.edit .ef{flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}li.edit .ef input,li.edit .ef select{font-size:13px;padding:6px}li.edit .ef .t{grid-column:1/-1}
+.msg{font-size:13px;margin-top:8px;min-height:1em}.ok{color:#1E8E3E}.ng{color:#C62828}.muted{color:#8a94a0;font-size:12px}
+#gate{display:none}
+</style></head><body>
+<header><h1>タスク入力</h1><a href="../">← 戦略マネージメントボードへ</a></header>
+<div class="wrap">
+<div class="card" id="gate"><h2>このページは管理者用です</h2><p class="muted">管理者用のリンクから一度開くと、この端末で使えるようになります。</p></div>
+<div id="main" style="display:none">
+<div class="card"><h2>タスクを追加</h2>
+<div class="tabs"><button class="on" data-m="one">1件ずつ</button><button data-m="bulk">まとめて貼り付け</button></div>
+<form id="f1"><label>店</label><select name="store" id="st1"></select>
+<label>やること</label><input name="text" required placeholder="例：よだれ鶏を塩麹もも肉に切り替える">
+<div class="row"><div><label>担当</label><input name="who" list="whos" placeholder="例：田代"></div><div><label>期限</label><input name="due" type="date"></div><div><label>期限（日付以外）</label><input name="due2" placeholder="毎日／10月前半 など"></div></div>
+<div class="chips" id="dchips"></div>
+<div style="margin-top:12px"><button>追加</button></div></form>
+<form id="fb" style="display:none"><label>1行に1件。「店｜やること｜担当｜期限」（区切りは ｜ か |）。店を省くと下の店になります</label>
+<textarea name="lines" placeholder="Lad's｜放題のお客様にフード追加の声かけ｜髙橋｜毎日&#10;KABUKI｜よだれ鶏の切替｜田代｜10/6&#10;勤怠の実績を翌日15時までに確定｜各店責任者｜毎日"></textarea>
+<div class="row"><div><label>店（省略時）</label><select name="store" id="stb"></select></div></div>
+<div style="margin-top:12px"><button>まとめて追加</button></div></form>
+<div class="msg" id="amsg"></div></div>
+<div class="card"><h2>タスク一覧 <span class="muted" id="cnt"></span></h2>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><select id="flt" style="width:auto"><option value="">全店</option></select><button class="warn" id="clr">済みをまとめて消す</button><button class="sub" id="rel">再読み込み</button></div>
+<div id="list"><p class="muted">読み込み中…</p></div></div>
+</div></div>
+<datalist id="whos"><option>髙橋</option><option>酒井</option><option>田代</option><option>遠藤</option><option>渡邊</option><option>各店長</option><option>各店責任者</option></datalist>
+<script>
+const URL_="https://script.google.com/macros/s/AKfycby3VNJ__tUivx4BWLBDqf0_YwwGvJPmiomdEzCz2gsioisNlmIdIIKzPaTxYX36fk5klg/exec";const ST={"ラッツ":"Lad's","餃包新宿":"餃包 新宿店","餃包東口":"餃包 東口店","KABUKI":"KABUKI餃子","タコスKichi":"タコスKichi","共通":"全店共通"};
+const ALIAS=[["lad","ラッツ"],["ラッツ","ラッツ"],["新宿","餃包新宿"],["東口","餃包東口"],["kabuki","KABUKI"],["歌舞伎","KABUKI"],["kichi","タコスKichi"],["タコス","タコスKichi"],["共通","共通"],["全店","共通"]];
+let AK="",TD=[];const $=s=>document.querySelector(s);const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);const addD=n=>new Date(Date.now()+9*3600e3+n*864e5).toISOString().slice(0,10);
+const isD=d=>/^\d{4}-\d{2}-\d{2}$/.test(d);const lab=d=>isD(d)?(+d.slice(5,7))+'/'+(+d.slice(8,10)):d;
+function storeOf(s){const l=s.toLowerCase();for(const[k,v]of ALIAS)if(l.includes(k.toLowerCase()))return v;return null}
+function dueOf(s){s=(s||'').trim();const m=s.match(/^(\d{1,2})\/(\d{1,2})$/);if(m){const y=new Date().getFullYear();return y+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0')}if(s==='今日'||s==='すぐ')return today();if(s==='明日')return addD(1);return s}
+async function api(o){const r=await fetch(URL_,{method:'POST',body:JSON.stringify(Object.assign({admin:AK,key:AK},o))});const j=await r.json();if(!j.ok)throw new Error(j.error||'error');return j}
+async function load(){try{const r=await(await fetch(URL_+'?action=tasks&key='+encodeURIComponent(AK))).json();if(!r.ok)throw 0;TD=r.tasks;render()}catch(e){$('#list').innerHTML='<p class="ng">読み込めませんでした</p>'}}
+function sortT(l){return l.slice().sort((a,b)=>(a.done-b.done)||((a.due||'9')<(b.due||'9')?-1:1))}
+function render(){const f=$('#flt').value;const keys=Object.keys(ST).filter(k=>!f||k===f);let h='';for(const k of keys){const l=TD.filter(t=>t.store===k);if(!l.length)continue;h+='<div class="grp">'+esc(ST[k])+'</div><ul>'+sortT(l).map(li).join('')+'</ul>'}
+$('#list').innerHTML=h||'<p class="muted">タスクはありません</p>';const op=TD.filter(t=>!t.done).length;$('#cnt').textContent='残り '+op+'／済み '+(TD.length-op);
+document.querySelectorAll('#list li').forEach(e=>{const id=e.dataset.id,t=TD.find(x=>x.id===id);e.querySelector('input[type=checkbox]').onchange=ev=>done(t,ev.target.checked);e.querySelector('.ed').onclick=()=>edit(e,t);e.querySelector('.dl').onclick=()=>del([t])})}
+function li(t){const ov=!t.done&&isD(t.due)&&t.due<today();return '<li data-id="'+esc(t.id)+'" class="'+(t.done?'done ':'')+(ov?'over':'')+'"><input type="checkbox" '+(t.done?'checked':'')+'><span class="tx">'+esc(t.text)+'<span class="mt">'+(t.who?'担当 '+esc(t.who)+'　':'')+(t.due?'<span class="due">期限 '+esc(lab(t.due))+'</span>':'')+(t.done&&t.done_at?'　済 '+esc(t.done_at):'')+(t.src?'　<span class="muted">'+esc(t.src)+'</span>':'')+'</span></span><span class="ops"><button class="sub ed">直す</button><button class="warn dl">消す</button></span></li>'}
+function edit(e,t){e.classList.add('edit');e.innerHTML='<div class="ef"><input class="t" value="'+esc(t.text)+'"><select>'+Object.keys(ST).map(k=>'<option value="'+k+'" '+(k===t.store?'selected':'')+'>'+esc(ST[k])+'</option>').join('')+'</select><input value="'+esc(t.who)+'" list="whos" placeholder="担当"><input value="'+esc(t.due)+'" placeholder="期限 10/6・毎日"></div><span class="ops"><button class="sv">保存</button><button class="sub cc">やめる</button></span>';
+const [tx,sel,who,due]=e.querySelectorAll('.ef input,.ef select');e.querySelector('.cc').onclick=render;e.querySelector('.sv').onclick=async()=>{const o={id:t.id,store:sel.value,text:tx.value.trim(),who:who.value.trim(),due:dueOf(due.value)};try{await api(Object.assign({action:'task_edit'},o));Object.assign(t,o);render()}catch(x){alert('保存できませんでした')}}}
+async function done(t,v){t.done=v;t.done_at=v?'いま':'';render();try{await api({action:'task_done',id:t.id,done:v})}catch(x){t.done=!v;render();alert('保存できませんでした')}}
+async function del(l){if(!l.length)return;if(!confirm(l.length===1?'画面から消しますか？\n'+l[0].text:'済みの '+l.length+' 件を画面から消しますか？'))return;try{await api({action:'task_del',ids:l.map(t=>t.id)});const s=new Set(l.map(t=>t.id));TD=TD.filter(t=>!s.has(t.id));render()}catch(x){alert('消せませんでした')}}
+async function add(items){const m=$('#amsg');m.className='msg';m.textContent='追加中…';try{const r=await api({action:'task_add',items:items.map(o=>Object.assign({src:'入力'},o))});items.forEach((o,i)=>TD.push(Object.assign({id:r.ids[i],done:false,done_at:'',src:'入力'},o)));render();m.className='msg ok';m.textContent=items.length+'件 追加しました';return true}catch(x){m.className='msg ng';m.textContent='追加できませんでした';return false}}
+function init(){const opts=Object.keys(ST).map(k=>'<option value="'+k+'">'+esc(ST[k])+'</option>').join('');$('#st1').innerHTML=opts;$('#stb').innerHTML=opts;$('#flt').innerHTML+=opts;
+[['今日',0],['明日',1],['3日後',3],['1週間後',7]].forEach(([n,d])=>{const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>{$('#f1').due.value=addD(d);$('#f1').due2.value=''};$('#dchips').appendChild(b)});['毎日','次回まで'].forEach(n=>{const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>{$('#f1').due.value='';$('#f1').due2.value=n};$('#dchips').appendChild(b)});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));$('#f1').style.display=b.dataset.m==='one'?'':'none';$('#fb').style.display=b.dataset.m==='bulk'?'':'none'});
+$('#f1').onsubmit=async e=>{e.preventDefault();const f=e.target;const o={store:f.store.value,text:f.text.value.trim(),who:f.who.value.trim(),due:f.due.value||f.due2.value.trim()};if(!o.text)return;if(await add([o])){f.text.value='';f.text.focus()}};
+$('#fb').onsubmit=async e=>{e.preventDefault();const f=e.target;const items=f.lines.value.split('\n').map(x=>x.trim().replace(/^[・\-\s]+/,'')).filter(Boolean).map(x=>{let c=x.split(/[｜|]/).map(s=>s.trim());let st=storeOf(c[0]);if(st&&c.length>=2)c.shift();else st=f.store.value;return{store:st,text:c[0]||'',who:c[1]||'',due:dueOf(c[2]||'')}}).filter(o=>o.text);if(!items.length)return;if(await add(items))f.lines.value=''};
+$('#flt').onchange=render;$('#rel').onclick=load;$('#clr').onclick=()=>del(TD.filter(t=>t.done))}
+(function(){const q=new URLSearchParams(location.hash.slice(1));const a=q.get('a');if(a){try{localStorage.setItem('tka',a)}catch(e){}history.replaceState(null,'',location.pathname)}try{AK=a||localStorage.getItem('tka')||''}catch(e){AK=a||''}
+if(!AK){$('#gate').style.display='block';return}$('#main').style.display='block';init();load()})();
+</script></body></html>
